@@ -10,7 +10,7 @@ defmodule Mix.Tasks.Ejabberd.Gen.Config do
   """
 
   def run([]) do
-    cwd = File.cwd!
+    cwd = File.cwd!()
     source = Path.join(cwd, "priv/templates/ejabberd.yml.eex")
     target = Path.join(cwd, "config/ejabberd.yml")
     contents = EEx.eval_file(source, cwd: cwd)

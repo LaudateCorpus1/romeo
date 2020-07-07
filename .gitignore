@@ -7,3 +7,5 @@ erl_crash.dump
 /logs
 /config/ejabberd.yml
 /doc
+.idea
+*.iml

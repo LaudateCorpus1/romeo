@@ -1,5 +1,4 @@
 defmodule UserHelper do
-
   defmacro __using__(_) do
     quote do
       import UserHelper
@@ -14,11 +13,13 @@ defmodule UserHelper do
 
     register_user(username, password)
 
-    [jid: username <> "@localhost",
-     password: password,
-     resource: resource,
-     nickname: username,
-     port: (if tls, do: 52225, else: 52222)]
+    [
+      jid: username <> "@localhost",
+      password: password,
+      resource: resource,
+      nickname: username,
+      port: if(tls, do: 52225, else: 52222)
+    ]
   end
 
   def register_user(username, password \\ "password") do
@@ -30,7 +31,24 @@ defmodule UserHelper do
   end
 
   def setup_presence_subscriptions(user1, user2) do
-    :mod_admin_extra.add_rosteritem(user1, "localhost", user2, "localhost", user2, "buddies", "both")
-    :mod_admin_extra.add_rosteritem(user2, "localhost", user1, "localhost", user1, "buddies", "both")
+    :mod_admin_extra.add_rosteritem(
+      user1,
+      "localhost",
+      user2,
+      "localhost",
+      user2,
+      "buddies",
+      "both"
+    )
+
+    :mod_admin_extra.add_rosteritem(
+      user2,
+      "localhost",
+      user1,
+      "localhost",
+      user1,
+      "buddies",
+      "both"
+    )
   end
 end
