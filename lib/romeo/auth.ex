@@ -3,6 +3,11 @@ defmodule Romeo.Auth do
   Handles XMPP authentication mechanisms.
   """
 
+  # 1 second
+  @min_auth_backoff 1_000
+  # 5 minutes
+  @max_auth_backoff 300_000
+
   use Romeo.XML
   require Logger
 
@@ -14,8 +19,12 @@ defmodule Romeo.Auth do
   defmodule Error do
     defexception [:message]
 
-    def exception(mechanism) do
-      msg = "Failed to authenticate using mechanism: #{inspect(mechanism)}"
+    def exception(%{mechanism: mechanism, reply: reply}) do
+      msg =
+        "Failed to authenticate using mechanism: #{inspect(mechanism)}\nFull reply: #{
+          inspect(reply)
+        }"
+
       %Romeo.Auth.Error{message: msg}
     end
   end
@@ -25,7 +34,7 @@ defmodule Romeo.Auth do
 
   If the preferred mechanism is not supported it will choose PLAIN.
   """
-  def authenticate!(conn) do
+  def authenticate!(%Romeo.Connection{} = conn) do
     preferred = conn.preferred_auth_mechanisms
     mechanisms = conn.features.mechanisms
     preferred_mechanism(preferred, mechanisms) |> do_authenticate(conn)
@@ -44,12 +53,11 @@ defmodule Romeo.Auth do
         conn
 
       _conn, xmlel(name: "stream:error") = reply ->
-        Logger.error(fn -> "Handshake Error: #{inspect(reply)}" end)
-        raise Romeo.Auth.Error, "handshake error"
+        raise Romeo.Auth.Error, %{mechanism: "handshake error", reply: reply}
     end)
   end
 
-  defp do_authenticate(mechanism, conn) do
+  defp do_authenticate(mechanism, %Romeo.Connection{} = conn, retry_delay \\ @min_auth_backoff) do
     {:ok, conn} =
       case mechanism do
         {name, mod} ->
@@ -62,8 +70,25 @@ defmodule Romeo.Auth do
       end
 
     case success?(conn) do
-      {:ok, conn} -> conn
-      {:error, _conn} -> raise Romeo.Auth.Error, mechanism
+      {:ok, conn} ->
+        conn
+
+      {:error, _conn, reply} ->
+        case Romeo.XML.subelement(reply, "temporary-auth-failure") do
+          nil ->
+            raise Romeo.Auth.Error, %{mechanism: mechanism, reply: reply}
+
+          _ ->
+            retry_delay = :backoff.rand_increment(retry_delay, @max_auth_backoff)
+
+            Logger.warn(fn ->
+              "Authenticating with #{mechanism} failed because of a temporary auth failure,
+              retrying in #{retry_delay} ms.\nFull reply: #{inspect(reply)}"
+            end)
+
+            Process.sleep(retry_delay)
+            do_authenticate(mechanism, conn, retry_delay)
+        end
     end
   end
 
@@ -98,8 +123,7 @@ defmodule Romeo.Auth do
           {:ok, conn}
 
         "failure" ->
-          Logger.error(fn -> "Failed to authenticate: #{inspect(reply)}" end)
-          {:error, conn}
+          {:error, conn, reply}
       end
     end)
   end

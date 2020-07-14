@@ -29,6 +29,7 @@ defmodule Romeo.Mixfile do
 
   defp deps do
     [
+      {:backoff, "~> 1.1.6"},
       {:connection, "~> 1.0"},
       {:fast_xml, "~> 1.1"},
 
