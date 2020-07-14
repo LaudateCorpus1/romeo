@@ -79,7 +79,7 @@ defmodule Romeo.Auth do
       {:ok, conn} ->
         conn
 
-      {:error, _conn, reply} ->
+      {:error, _conn, reply} when Record.is_record(reply, :xmlel) ->
         case Romeo.XML.subelement(reply, "temporary-auth-failure") do
           nil ->
             raise Romeo.Auth.Error, %{mechanism: mechanism, reply: reply}
@@ -95,6 +95,9 @@ defmodule Romeo.Auth do
             Process.sleep(retry_delay)
             do_authenticate(mechanism, original_conn, retry_delay)
         end
+
+      {:error, _conn, reply} ->
+        raise Romeo.Auth.Error, %{mechanism: mechanism, reply: reply}
     end
   end
 
@@ -122,13 +125,20 @@ defmodule Romeo.Auth do
   end
 
   defp success?(%{transport: mod} = conn) do
-    mod.recv(conn, fn conn, xmlel(name: name) = reply ->
-      case name do
-        "success" ->
-          Logger.info(fn -> "Authenticated successfully" end)
-          {:ok, conn}
+    mod.recv(conn, fn conn, reply ->
+      case reply do
+        xmlel(name: name) when Record.is_record(reply, :xmlel) ->
+          case name do
+            "success" ->
+              Logger.info(fn -> "Authenticated successfully" end)
+              {:ok, conn}
 
-        "failure" ->
+            "failure" ->
+              {:error, conn, reply}
+          end
+
+        reply ->
+          Logger.warn(fn -> "Unknown auth response: #{inspect(reply)}" end)
           {:error, conn, reply}
       end
     end)
