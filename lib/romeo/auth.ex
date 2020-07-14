@@ -40,7 +40,9 @@ defmodule Romeo.Auth do
     preferred_mechanism(preferred, mechanisms) |> do_authenticate(conn)
   end
 
-  def handshake!(%{transport: mod, password: password, stream_id: stream_id} = conn) do
+  def handshake!(
+        %Romeo.Connection{transport: mod, password: password, stream_id: stream_id} = conn
+      ) do
     stanza =
       :crypto.hash(:sha, "#{stream_id}#{password}")
       |> Base.encode16(case: :lower)
@@ -57,16 +59,20 @@ defmodule Romeo.Auth do
     end)
   end
 
-  defp do_authenticate(mechanism, %Romeo.Connection{} = conn, retry_delay \\ @min_auth_backoff) do
+  defp do_authenticate(
+         mechanism,
+         %Romeo.Connection{} = original_conn,
+         retry_delay \\ @min_auth_backoff
+       ) do
     {:ok, conn} =
       case mechanism do
         {name, mod} ->
           Logger.info(fn -> "Authenticating with extension #{name} implemented by #{mod}" end)
-          mod.authenticate(name, conn)
+          mod.authenticate(name, original_conn)
 
         _ ->
           Logger.info(fn -> "Authenticating with #{mechanism}" end)
-          authenticate_with(mechanism, conn)
+          authenticate_with(mechanism, original_conn)
       end
 
     case success?(conn) do
@@ -87,18 +93,18 @@ defmodule Romeo.Auth do
             end)
 
             Process.sleep(retry_delay)
-            do_authenticate(mechanism, conn, retry_delay)
+            do_authenticate(mechanism, original_conn, retry_delay)
         end
     end
   end
 
-  defp authenticate_with("PLAIN", %{transport: mod} = conn) do
+  defp authenticate_with("PLAIN", %Romeo.Connection{transport: mod} = conn) do
     [username, password] = get_client_credentials(conn)
     payload = <<0>> <> username <> <<0>> <> password
     mod.send(conn, Romeo.Stanza.auth("PLAIN", Romeo.Stanza.base64_cdata(payload)))
   end
 
-  defp authenticate_with("ANONYMOUS", %{transport: mod} = conn) do
+  defp authenticate_with("ANONYMOUS", %Romeo.Connection{transport: mod} = conn) do
     conn |> mod.send(Romeo.Stanza.auth("ANONYMOUS"))
   end
 
