@@ -34,7 +34,7 @@ defmodule Romeo.Auth do
 
   If the preferred mechanism is not supported it will choose PLAIN.
   """
-  def authenticate!(%Romeo.Connection{} = conn) do
+  def authenticate(%Romeo.Connection{} = conn) do
     preferred = conn.preferred_auth_mechanisms
     mechanisms = conn.features.mechanisms
     preferred_mechanism(preferred, mechanisms) |> do_authenticate(conn)
@@ -59,20 +59,16 @@ defmodule Romeo.Auth do
     end)
   end
 
-  defp do_authenticate(
-         mechanism,
-         %Romeo.Connection{} = original_conn,
-         retry_delay \\ @min_auth_backoff
-       ) do
+  defp do_authenticate(mechanism, %Romeo.Connection{} = conn) do
     {:ok, conn} =
       case mechanism do
         {name, mod} ->
           Logger.info(fn -> "Authenticating with extension #{name} implemented by #{mod}" end)
-          mod.authenticate(name, original_conn)
+          mod.authenticate(name, conn)
 
         _ ->
           Logger.info(fn -> "Authenticating with #{mechanism}" end)
-          authenticate_with(mechanism, original_conn)
+          authenticate_with(mechanism, conn)
       end
 
     case success?(conn) do
@@ -85,15 +81,7 @@ defmodule Romeo.Auth do
             raise Romeo.Auth.Error, %{mechanism: mechanism, reply: reply}
 
           _ ->
-            retry_delay = :backoff.rand_increment(retry_delay, @max_auth_backoff)
-
-            Logger.warn(fn ->
-              "Authenticating with #{mechanism} failed because of a temporary auth failure,
-              retrying in #{retry_delay} ms.\nFull reply: #{inspect(reply)}"
-            end)
-
-            Process.sleep(retry_delay)
-            do_authenticate(mechanism, original_conn, retry_delay)
+            {:error, %{type: "temporary-auth-failure", reply: reply}}
         end
 
       {:error, _conn, reply} ->

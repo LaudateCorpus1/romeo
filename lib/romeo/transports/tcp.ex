@@ -62,14 +62,23 @@ defmodule Romeo.Transports.TCP do
   end
 
   defp start_protocol(%Conn{} = conn) do
-    conn
-    |> start_stream(@ns_jabber_client)
-    |> negotiate_features()
-    |> maybe_start_tls()
-    |> authenticate()
-    |> bind()
-    |> session()
-    |> ready()
+    auth_result =
+      conn
+      |> start_stream(@ns_jabber_client)
+      |> negotiate_features()
+      |> maybe_start_tls()
+      |> authenticate()
+
+    case auth_result do
+      {:error, _} = error ->
+        error
+
+      conn ->
+        conn
+        |> bind()
+        |> session()
+        |> ready()
+    end
   end
 
   defp start_stream(%Conn{jid: jid} = conn, xmlns \\ @ns_jabber_client) do
@@ -109,11 +118,16 @@ defmodule Romeo.Transports.TCP do
   end
 
   defp authenticate(%Conn{} = conn) do
-    conn
-    |> Romeo.Auth.authenticate!()
-    |> reset_parser
-    |> start_stream
-    |> negotiate_features
+    case Romeo.Auth.authenticate(conn) do
+      {:error, _} = error ->
+        error
+
+      conn ->
+        conn
+        |> reset_parser
+        |> start_stream
+        |> negotiate_features
+    end
   end
 
   defp handshake(%Conn{} = conn) do

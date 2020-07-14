@@ -2,6 +2,8 @@ defmodule Romeo.Connection do
   @moduledoc false
 
   @timeout 5_000
+  @connect_retry_backoff_default 5_000
+  @connect_retry_backoff_max 300_000
   @default_transport Romeo.Transports.TCP
 
   alias Romeo.Connection.Features
@@ -25,6 +27,7 @@ defmodule Romeo.Connection do
             socket_opts: [],
             stream_id: nil,
             timeout: nil,
+            connect_retry_backoff: @connect_retry_backoff_default,
             transport: nil
 
   use Connection
@@ -90,13 +93,22 @@ defmodule Romeo.Connection do
     {:connect, :init, conn}
   end
 
-  def connect(_, %{transport: transport, timeout: timeout} = conn) do
+  def connect(_, %{transport: transport, connect_retry_backoff: connect_retry_backoff} = conn) do
     case transport.connect(conn) do
       {:ok, conn} ->
         {:ok, conn}
 
-      {:error, _} ->
-        {:backoff, timeout, conn}
+      {:error, _} = error ->
+        connect_retry_backoff =
+          :backoff.rand_increment(connect_retry_backoff, @connect_retry_backoff_max)
+
+        Logger.warn(fn ->
+          "Connecting failed, retrying in #{connect_retry_backoff} ms.\nFull error: #{
+            inspect(error)
+          }"
+        end)
+
+        {:backoff, connect_retry_backoff, %{conn | connect_retry_backoff: connect_retry_backoff}}
     end
   end
 
